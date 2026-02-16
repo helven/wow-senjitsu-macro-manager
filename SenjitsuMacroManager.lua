@@ -449,19 +449,9 @@ function SMM:SwapMacro()
         end
     end
 
-    -- 3. Create New (SAFE FIRST)
-    -- If this fails (e.g. name reserved), the old one still exists.
-    -- However, CreateMacro returns index on success or nil/error.
-    -- We can wrap in pcall if we want to be super safe, but standard API check is usually enough.
     local newIndex = CreateMacro(name, icon, body, targetIsLocal)
     
     if newIndex then
-        -- 4. Delete Old only if new was created
-        -- Note: The index of the old macro might have shifted if we inserted before it?
-        -- Global vs Char macros have separate index ranges usually. 
-        -- Global: 1-120. Char: 121-138 (or 150).
-        -- If we defined newIndex, we know creation worked. 
-        -- Deleting the *original* index should be safe provided we use the stored index.
         if self.SelectedMacroIndex then
            DeleteMacro(self.SelectedMacroIndex)
         end
@@ -697,13 +687,9 @@ function SMM:CreateIconBrowser()
     local height = TOP_HEIGHT + contentHeight + BOTTOM_HEIGHT + PADDING
     
     frame:SetSize(width, height)
-    frame:SetPoint("CENTER", 0, 0)
+    frame:SetPoint("TOPLEFT", self, "TOPRIGHT", 10, 0)
     frame:SetFrameStrata("DIALOG")
     frame:EnableMouse(true)
-    frame:SetMovable(true)
-    frame:RegisterForDrag("LeftButton")
-    frame:SetScript("OnDragStart", frame.StartMoving)
-    frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
 
     frame:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
