@@ -332,38 +332,17 @@ function SMM:SetupButtonActions()
         local icon = SMM.WorkIcon or 134400
         
         if self.SelectedMacroIndex then
-            -- Update existing
-            EditMacro(self.SelectedMacroIndex, name, icon, body)
+            local isLocal = self.TypeChar:GetChecked()
+            -- Check if type changed (Global <-> Character)
+            if self.SelectedMacroIsLocal ~= isLocal then 
+                 self:SwapMacro()
+            else
+                 self:UpdateMacro(self.SelectedMacroIndex, name, icon, body)
+            end
         else
             -- Create new
             local isLocal = self.TypeChar:GetChecked()
-            
-            -- Check Limits to prevent "CreateMacro() failed" error
-            local numGlobal, numChar = GetNumMacros()
-            local limitGlobal = MAX_ACCOUNT_MACROS or 120
-            local limitChar = MAX_CHARACTER_MACROS or 30 -- Updated to 30 for Retail
-            
-            if isLocal then
-                if numChar >= limitChar then
-                    print("|cffff0000SMM Error:|r Character Macro Limit Reached ("..numChar.."/"..limitChar.."). Cannot create.")
-                    return
-                end
-            else
-                if numGlobal >= limitGlobal then
-                    print("|cffff0000SMM Error:|r Global Macro Limit Reached ("..numGlobal.."/"..limitGlobal.."). Cannot create.")
-                    return
-                end
-            end
-            
-            CreateMacro(name, icon, body, isLocal)
-            -- After creation, CreateMacro triggers UPDATE_MACROS which refreshes list
-            -- User might want to stay in edit mode for this new macro?
-            -- RefreshList resets selection to nil usually... 
-            -- We might want to handle preserving selection later, but for now this fits requirements.
-            self.NameEdit:SetText("")
-            self.BodyEdit:SetText("")
-            self.IconPreview:SetTexture(134400)
-            SMM.WorkIcon = 134400
+            self:NewMacro(name, icon, body, isLocal)
         end
     end)
 
@@ -393,8 +372,8 @@ function SMM:SetDetailViewEnabled(enabled)
     if enabled then
         -- Edit Mode
         self.DeleteButton:Enable()
-        self.TypeGlobal:Disable() -- Usually you can't change macro type after creation easily without recreation
-        self.TypeChar:Disable()
+        self.TypeGlobal:Enable() -- Helper logic: Allow changing type now
+        self.TypeChar:Enable()
     else
         -- Create/Reset Mode
         self.NameEdit:SetText("")
@@ -408,6 +387,88 @@ function SMM:SetDetailViewEnabled(enabled)
         SMM.WorkIcon = 134400
         self.IconPreview:SetTexture(134400)
         self.SelectIconButton:Enable()
+    end
+end
+
+-- -----------------------------------------------------------------------------
+-- MACRO CRUD OPERATIONS
+-- -----------------------------------------------------------------------------
+
+function SMM:NewMacro(name, icon, body, isLocal)
+    -- Check Limits to prevent "CreateMacro() failed" error
+    local numGlobal, numChar = GetNumMacros()
+    local limitGlobal = MAX_ACCOUNT_MACROS or 120
+    local limitChar = MAX_CHARACTER_MACROS or 30 
+    
+    if isLocal then
+        if numChar >= limitChar then
+            print("|cffff0000SMM Error:|r Character Macro Limit Reached ("..numChar.."/"..limitChar.."). Cannot create.")
+            return
+        end
+    else
+        if numGlobal >= limitGlobal then
+            print("|cffff0000SMM Error:|r Global Macro Limit Reached ("..numGlobal.."/"..limitGlobal.."). Cannot create.")
+            return
+        end
+    end
+    
+    CreateMacro(name, icon, body, isLocal)
+
+    -- Reset UI after creation
+    self.NameEdit:SetText("")
+    self.BodyEdit:SetText("")
+    self.IconPreview:SetTexture(134400)
+    SMM.WorkIcon = 134400
+end
+
+function SMM:UpdateMacro(index, name, icon, body)
+    EditMacro(index, name, icon, body)
+end
+
+function SMM:SwapMacro()
+    -- 1. Gather Data
+    local name = self.NameEdit:GetText()
+    local body = self.BodyEdit:GetText()
+    local icon = SMM.WorkIcon or 134400
+    local targetIsLocal = self.TypeChar:GetChecked() 
+    
+    -- 2. Check Limits for TARGET
+    local numGlobal, numChar = GetNumMacros()
+    local limitGlobal = MAX_ACCOUNT_MACROS or 120
+    local limitChar = MAX_CHARACTER_MACROS or 30 
+    
+    if targetIsLocal then
+        if numChar >= limitChar then
+            print("|cffff0000SMM Error:|r Character Macro Limit Reached ("..numChar.."/"..limitChar.."). Cannot move.")
+            return
+        end
+    else
+        if numGlobal >= limitGlobal then
+            print("|cffff0000SMM Error:|r Global Macro Limit Reached ("..numGlobal.."/"..limitGlobal.."). Cannot move.")
+            return
+        end
+    end
+
+    -- 3. Create New (SAFE FIRST)
+    -- If this fails (e.g. name reserved), the old one still exists.
+    -- However, CreateMacro returns index on success or nil/error.
+    -- We can wrap in pcall if we want to be super safe, but standard API check is usually enough.
+    local newIndex = CreateMacro(name, icon, body, targetIsLocal)
+    
+    if newIndex then
+        -- 4. Delete Old only if new was created
+        -- Note: The index of the old macro might have shifted if we inserted before it?
+        -- Global vs Char macros have separate index ranges usually. 
+        -- Global: 1-120. Char: 121-138 (or 150).
+        -- If we defined newIndex, we know creation worked. 
+        -- Deleting the *original* index should be safe provided we use the stored index.
+        if self.SelectedMacroIndex then
+           DeleteMacro(self.SelectedMacroIndex)
+        end
+        
+        -- 5. Reset UI
+        self.SelectedMacroIndex = nil
+        self:SetDetailViewEnabled(false)
     end
 end
 
