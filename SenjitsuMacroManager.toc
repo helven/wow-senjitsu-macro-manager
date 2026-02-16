@@ -1,0 +1,7 @@
+## Interface: 120001, 120000, 110100, 110007, 110005, 110002
+## Title: Senjitsu Macro Manager
+## Notes: A standalone CRUD interface for WoW Macros.
+## Author: Senjitsu
+## Version: 1.0.0
+
+SenjitsuMacroManager.lua
