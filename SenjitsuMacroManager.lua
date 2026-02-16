@@ -82,11 +82,13 @@ function SMM:CreateMainFrame()
 
     -- Background and Border
     self:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-        tile = true, tileSize = 32, edgeSize = 32,
-        insets = { left = 11, right = 12, top = 12, bottom = 11 }
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = nil,
+        tile = true, tileSize = 32, edgeSize = 0,
+        insets = { left = 0, right = 0, top = 0, bottom = 0 }
     })
+    -- [[ OPACITY CONTROL: Change the last number to 0.8 for transparent black ]]
+    self:SetBackdropColor(0, 0, 0, 0.8)
 
     -- Title
     self.Title = self:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -171,6 +173,7 @@ function SMM:CreateDetailView()
     self.TypeGlobal.text = self.TypeGlobal:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     self.TypeGlobal.text:SetPoint("LEFT", self.TypeGlobal, "RIGHT", 5, 0)
     self.TypeGlobal.text:SetText("General")
+    self.TypeGlobal:SetHitRectInsets(0, -self.TypeGlobal.text:GetStringWidth() - 5, 0, 0)
     self.TypeGlobal:SetChecked(true)
 
     self.TypeChar = CreateFrame("CheckButton", nil, self.DetailFrame, "UIRadioButtonTemplate")
@@ -178,6 +181,7 @@ function SMM:CreateDetailView()
     self.TypeChar.text = self.TypeChar:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     self.TypeChar.text:SetPoint("LEFT", self.TypeChar, "RIGHT", 5, 0)
     self.TypeChar.text:SetText("Character")
+    self.TypeChar:SetHitRectInsets(0, -self.TypeChar.text:GetStringWidth() - 5, 0, 0)
     
     -- Radio Logic
     self.TypeGlobal:SetScript("OnClick", function()
@@ -333,6 +337,24 @@ function SMM:SetupButtonActions()
         else
             -- Create new
             local isLocal = self.TypeChar:GetChecked()
+            
+            -- Check Limits to prevent "CreateMacro() failed" error
+            local numGlobal, numChar = GetNumMacros()
+            local limitGlobal = MAX_ACCOUNT_MACROS or 120
+            local limitChar = MAX_CHARACTER_MACROS or 30 -- Updated to 30 for Retail
+            
+            if isLocal then
+                if numChar >= limitChar then
+                    print("|cffff0000SMM Error:|r Character Macro Limit Reached ("..numChar.."/"..limitChar.."). Cannot create.")
+                    return
+                end
+            else
+                if numGlobal >= limitGlobal then
+                    print("|cffff0000SMM Error:|r Global Macro Limit Reached ("..numGlobal.."/"..limitGlobal.."). Cannot create.")
+                    return
+                end
+            end
+            
             CreateMacro(name, icon, body, isLocal)
             -- After creation, CreateMacro triggers UPDATE_MACROS which refreshes list
             -- User might want to stay in edit mode for this new macro?
@@ -623,11 +645,13 @@ function SMM:CreateIconBrowser()
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
 
     frame:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-        tile = true, tileSize = 32, edgeSize = 32,
-        insets = { left = 11, right = 12, top = 12, bottom = 11 }
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = nil,
+        tile = true, tileSize = 32, edgeSize = 0,
+        insets = { left = 0, right = 0, top = 0, bottom = 0 }
     })
+    -- [[ OPACITY CONTROL: Change the last number to 0.8 for transparent black ]]
+    frame:SetBackdropColor(0, 0, 0, 0.8)
 
     -- Title
     frame.Title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
