@@ -19,6 +19,9 @@ SMM.SelectedMacroIndex = nil -- The actual index in WoW's macro system
 SMM.SelectedMacroIsLocal = nil -- true if character specific
 SMM.MacroList = {} -- Table to hold macro data for the list
 SMM.FramePool = {} -- Pool for list buttons
+SMM.HeaderPool = {} -- Pool for header buttons
+SMM.ActiveHeaders = {} -- Currently active headers
+SMM.Groups = { Global = true, Char = true } -- Expansion state
 
 function SMM:RunAddonLifeCycle()
     SMM:InitializeLayout()
@@ -372,9 +375,14 @@ function SMM:GetListButton()
         highlight:SetAllPoints(btn)
         highlight:SetColorTexture(1, 1, 1, 0.2)
         
+        -- Icon
+        btn.Icon = btn:CreateTexture(nil, "ARTWORK")
+        btn.Icon:SetSize(18, 18)
+        btn.Icon:SetPoint("LEFT", 0, 0)
+        
         -- Text
         btn.Text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalLeft")
-        btn.Text:SetPoint("LEFT", 5, 0)
+        btn.Text:SetPoint("LEFT", 22, 0)
     end
     
     btn:Show()
@@ -388,17 +396,64 @@ function SMM:RecycleListButton(btn)
     table.insert(self.FramePool, btn)
 end
 
+function SMM:GetHeaderButton()
+    local btn = table.remove(self.HeaderPool)
+    if not btn then
+        btn = CreateFrame("Button", nil, self.ListContent)
+        btn:SetSize(180, 20)
+        
+        -- Expand/Collapse Texture
+        btn.ExpandIcon = btn:CreateTexture(nil, "ARTWORK")
+        btn.ExpandIcon:SetSize(14, 14)
+        btn.ExpandIcon:SetPoint("RIGHT", -5, 0)
+        
+        -- Text
+        btn.Text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        btn.Text:SetPoint("LEFT", 5, 0)
+        btn.Text:SetPoint("RIGHT", btn.ExpandIcon, "LEFT", -5, 0)
+        btn.Text:SetJustifyH("LEFT")
+        
+        -- Clickable area
+        btn:EnableMouse(true)
+        btn:RegisterForClicks("LeftButtonUp")
+        
+        -- Highlight
+        local hl = btn:CreateTexture(nil, "HIGHLIGHT")
+        hl:SetAllPoints(btn)
+        hl:SetColorTexture(1, 1, 1, 0.1)
+    end
+    btn:Show()
+    btn:SetParent(self.ListContent)
+    return btn
+end
+
+function SMM:RecycleHeaderButton(btn)
+    btn:Hide()
+    btn:SetParent(nil)
+    table.insert(self.HeaderPool, btn)
+end
+
 function SMM:RefreshList()
     -- Recycle current list
     for _, btn in ipairs(self.MacroList) do
         self:RecycleListButton(btn)
     end
-
     self.MacroList = {}
+
+    -- Recycle headers
+    for _, btn in ipairs(self.ActiveHeaders) do
+        self:RecycleHeaderButton(btn)
+    end
+    self.ActiveHeaders = {}
+
     local globalCount, charCount = GetNumMacros()
     local yOffset = 0
     local BUTTON_HEIGHT = 20
     
+    -- Filter check
+    local filterText = self.SearchBox and self.SearchBox:GetText():lower() or ""
+    local isFiltering = filterText ~= ""
+
     -- Helper to configure list buttons
     local function ConfigureListButton(index, isLocal)
         local apiIndex = index
@@ -411,15 +466,16 @@ function SMM:RefreshList()
         if not name then return end
 
         -- Filter Logic
-        local filterText = self.SearchBox and self.SearchBox:GetText():lower() or ""
-        if filterText ~= "" and not string.find(name:lower(), filterText, 1, true) then
+        if isFiltering and not string.find(name:lower(), filterText, 1, true) then
             return
         end
 
         local btn = self:GetListButton()
-        btn:SetPoint("TOPLEFT", 5, yOffset)
-        btn:SetSize(SMM.ListWidth - 25, BUTTON_HEIGHT) -- Adjust button width
-        btn.Text:SetText((isLocal and "|cff00ccff[C]|r " or "|cffffd700[G]|r ") .. name)
+        btn:SetPoint("TOPLEFT", 10, yOffset) -- Indented slightly
+        btn:SetSize(SMM.ListWidth - 30, BUTTON_HEIGHT) 
+        btn.Icon:SetTexture(icon)
+        -- Removed [G]/[C] prefix as headers provide context
+        btn.Text:SetText(name)
         
         -- Click Handler
         btn:SetScript("OnClick", function()
@@ -440,19 +496,44 @@ function SMM:RefreshList()
         yOffset = yOffset - BUTTON_HEIGHT
     end
 
-    -- Global Macros
-    for i = 1, globalCount do
-        ConfigureListButton(i, false)
-    end
-    
-    -- Separator space
-    if globalCount > 0 and charCount > 0 then
-        yOffset = yOffset - 5
+    -- Header Helper
+    local function AddHeader(label, count, max, groupKey)
+        -- If filtering, always show content, maybe hide header or keep it? 
+        -- Keeping it helps context.
+        
+        local btn = self:GetHeaderButton()
+        btn:SetPoint("TOPLEFT", 0, yOffset)
+        btn:SetSize(SMM.ListWidth - 10, 20)
+        
+        local isExpanded = SMM.Groups[groupKey] or isFiltering -- Auto expand on filter
+        
+        btn.Text:SetText(string.format("%s (%d/%d)", label, count, max))
+        btn.ExpandIcon:SetTexture(isExpanded 
+            and "Interface\\Buttons\\UI-MinusButton-Up" 
+            or "Interface\\Buttons\\UI-PlusButton-Up")
+        
+        btn:SetScript("OnClick", function()
+            SMM.Groups[groupKey] = not SMM.Groups[groupKey]
+            SMM:RefreshList()
+        end)
+        
+        table.insert(self.ActiveHeaders, btn)
+        yOffset = yOffset - 20
+        return isExpanded
     end
 
+    -- Global Macros
+    if AddHeader("General Macros", globalCount, MAX_ACCOUNT_MACROS or 120, "Global") then
+        for i = 1, globalCount do
+            ConfigureListButton(i, false)
+        end
+    end
+    
     -- Character Macros
-    for i = 1, charCount do
-        ConfigureListButton(i, true)
+    if AddHeader("Character Macros", charCount, MAX_CHARACTER_MACROS or 18, "Char") then
+        for i = 1, charCount do
+            ConfigureListButton(i, true)
+        end
     end
 
     self.ListContent:SetHeight(math.abs(yOffset) + 20)
