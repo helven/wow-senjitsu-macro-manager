@@ -34,7 +34,7 @@ function SMM:RunAddonLifeCycle()
     SMM:CreateButtons()
     SMM:RegisterEvents()
     SMM:SetupButtonActions()
-    SMM:SetDetailViewEnabled(false)
+    SMM:SetFormMode("create")
     SMM:SetupSlashCommand()
 end
 
@@ -61,7 +61,7 @@ function SMM:InitializeLayout()
     SMM.BottomPadding = 30 
     
     -- Adjusted to prevent scrollbar overlap
-    -- List (28%) + Scrollbar gap (~5%) + Detail (55%) = 88% < 100%
+    -- List (35%) + Scrollbar gap + Detail (55%) = ~90% < 100%
     SMM.ListWidth = SMM.FinalWidth * 0.35 
     SMM.DetailWidth = SMM.FinalWidth * 0.55 
     
@@ -126,13 +126,10 @@ function SMM:CreateListView()
     self.SearchBox:SetPoint("CENTER")
     self.SearchBox:SetFontObject("ChatFontNormal")
     self.SearchBox:SetAutoFocus(false)
-    self.SearchBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-    self.SearchBox:SetScript("OnTextChanged", function(self)
+    self.SearchBox:SetScript("OnEscapePressed", function(box) box:ClearFocus() end)
+    self.SearchBox:SetScript("OnTextChanged", function()
         SMM:RefreshList()
     end)
-
-    -- Map global
-    SMM.SearchBox = self.SearchBox
 
     -- ScrollFrame (List View)
     self.ListScroll = CreateFrame("ScrollFrame", nil, self, "UIPanelScrollFrameTemplate")
@@ -143,12 +140,15 @@ function SMM:CreateListView()
     self.ListContent:SetSize(SMM.ListWidth, SMM.ListHeight)
     self.ListScroll:SetScrollChild(self.ListContent)
     
-    self.ListScroll:SetScript("OnMouseWheel", function(self, delta)
-        local check = self:GetVerticalScroll() - (delta * 20)
+    self.ListScroll:SetScript("OnMouseWheel", function(scroll, delta)
+        local check = scroll:GetVerticalScroll() - (delta * 20)
         if check < 0 then check = 0 end
-        if check > self:GetVerticalScrollRange() then check = self:GetVerticalScrollRange() end
-        self:SetVerticalScroll(check)
+        if check > scroll:GetVerticalScrollRange() then check = scroll:GetVerticalScrollRange() end
+        scroll:SetVerticalScroll(check)
     end)
+    
+    -- Map globals for logic access
+    SMM.SearchBox = self.SearchBox
 end
 
 function SMM:CreateDetailView()
@@ -245,7 +245,7 @@ function SMM:CreateDetailView()
     -- Top Elements: ~90px (Radio + Name) + 60px (Icon) ~ 150px
     -- Buttons: 25px
     -- Padding: ~20px
-    local bodyHeight = safeHeight - 200 
+    local bodyHeight = (SMM.FinalHeight - 60) - 200 
     self.BodyBackdrop:SetSize(SMM.DetailWidth, bodyHeight) 
     self.BodyBackdrop:SetPoint("TOPLEFT", self.BodyLabel, "BOTTOMLEFT", 0, -5)
     self.BodyBackdrop:SetBackdrop({
@@ -350,32 +350,32 @@ function SMM:SetupButtonActions()
         self.SelectedMacroIndex = nil
         SMM.WorkIcon = 134400
         self.IconPreview:SetTexture(134400)
-        self:SetDetailViewEnabled(false) -- Reset view
+        self:SetFormMode("create") -- Reset view
     end)
 
     self.DeleteButton:SetScript("OnClick", function()
         if self.SelectedMacroIndex then
             DeleteMacro(self.SelectedMacroIndex)
             self.SelectedMacroIndex = nil
-            self:SetDetailViewEnabled(false)
+            self:SetFormMode("create")
         end
     end)
 end
 
-function SMM:SetDetailViewEnabled(enabled)
+function SMM:SetFormMode(mode)
     self.NameEdit:Enable()
     self.BodyEdit:Enable()
     self.SaveButton:Enable()
     self.NameEditHitBox:SetAlpha(1)
     self.BodyBackdrop:SetAlpha(1)
     
-    if enabled then
-        -- Edit Mode
+    if mode == "edit" then
+        -- Edit Mode: Existing macro selected
         self.DeleteButton:Enable()
-        self.TypeGlobal:Enable() -- Helper logic: Allow changing type now
+        self.TypeGlobal:Enable()
         self.TypeChar:Enable()
-    else
-        -- Create/Reset Mode
+    elseif mode == "create" then
+        -- Create Mode: Clear form for new macro
         self.NameEdit:SetText("")
         self.BodyEdit:SetText("")
         self.DeleteButton:Disable()
@@ -452,13 +452,11 @@ function SMM:SwapMacro()
     local newIndex = CreateMacro(name, icon, body, targetIsLocal)
     
     if newIndex then
-        if self.SelectedMacroIndex then
-           DeleteMacro(self.SelectedMacroIndex)
-        end
+        DeleteMacro(self.SelectedMacroIndex)
         
-        -- 5. Reset UI
+        -- Reset UI
         self.SelectedMacroIndex = nil
-        self:SetDetailViewEnabled(false)
+        self:SetFormMode("create")
     end
 end
 
@@ -594,7 +592,7 @@ function SMM:RefreshList()
             self.TypeGlobal:SetChecked(not isLocal)
             self.TypeChar:SetChecked(isLocal)
             
-            self:SetDetailViewEnabled(true)
+            self:SetFormMode("edit")
         end)
 
         -- Drag Handler
@@ -726,14 +724,14 @@ function SMM:CreateIconBrowser()
     
     SMM.CurrentCategory = "ALL" -- Default
 
-    local function OnSelect(self)
-        SMM.CurrentCategory = self.value
-        UIDropDownMenu_SetText(frame.CategoryDropdown, self:GetText())
-        SMM:UpdateIconList(self.value)
+    local function OnSelect(item)
+        SMM.CurrentCategory = item.value
+        UIDropDownMenu_SetText(frame.CategoryDropdown, item:GetText())
+        SMM:UpdateIconList(item.value)
         CloseDropDownMenus()
     end
 
-    UIDropDownMenu_Initialize(frame.CategoryDropdown, function(self, level, menuList)
+    UIDropDownMenu_Initialize(frame.CategoryDropdown, function(dropdown, level, menuList)
         local info = UIDropDownMenu_CreateInfo()
         info.fontObject = GameFontHighlight
         
@@ -829,12 +827,12 @@ function SMM:UpdateIconList(category)
     local itemIcons = GetMacroItemIcons() or {}
     
     if category == "ALL" then
-         for _, v in pairs(spellIcons) do table.insert(SMM.CurrentIconList, v) end
-         for _, v in pairs(itemIcons) do table.insert(SMM.CurrentIconList, v) end
+         for _, v in ipairs(spellIcons) do table.insert(SMM.CurrentIconList, v) end
+         for _, v in ipairs(itemIcons) do table.insert(SMM.CurrentIconList, v) end
     elseif category == "SPELLS" then
-         for _, v in pairs(spellIcons) do table.insert(SMM.CurrentIconList, v) end
+         for _, v in ipairs(spellIcons) do table.insert(SMM.CurrentIconList, v) end
     elseif category == "ITEMS" then
-         for _, v in pairs(itemIcons) do table.insert(SMM.CurrentIconList, v) end
+         for _, v in ipairs(itemIcons) do table.insert(SMM.CurrentIconList, v) end
     end
     
     SMM:UpdateIconGrid()
