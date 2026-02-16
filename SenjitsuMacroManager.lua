@@ -21,6 +21,7 @@ SMM.MacroList = {} -- Table to hold macro data for the list
 SMM.FramePool = {} -- Pool for list buttons
 
 function SMM:RunAddonLifeCycle()
+    SMM:InitializeLayout()
     SMM:CreateMainFrame()
     SMM:CreateListView()
     SMM:CreateDetailView()
@@ -34,9 +35,37 @@ end
 -- ----------------------------------------------------------------------------------------------------------------------------------------------------------
 -- UI CREATION FUNCTIONS
 -- ----------------------------------------------------------------------------------------------------------------------------------------------------------
+
+function SMM:InitializeLayout()
+    SMM.ScreenWidth = UIParent:GetWidth()
+    SMM.ScreenHeight = UIParent:GetHeight()
+    
+    SMM.TargetWidth = 800
+    SMM.TargetHeight = 600
+    
+    SMM.MaxWidthAllowed = SMM.ScreenWidth * 0.8
+    SMM.MaxHeightAllowed = SMM.ScreenHeight * 0.8
+    
+    SMM.FinalWidth = math.min(SMM.TargetWidth, SMM.MaxWidthAllowed)
+    SMM.FinalHeight = math.min(SMM.TargetHeight, SMM.MaxHeightAllowed)
+    
+    -- Layout Constants
+    SMM.Padding = 20
+    SMM.TopPadding = 50 
+    SMM.BottomPadding = 30 
+    
+    -- Adjusted to prevent scrollbar overlap
+    -- List (28%) + Scrollbar gap (~5%) + Detail (55%) = 88% < 100%
+    SMM.ListWidth = SMM.FinalWidth * 0.35 
+    SMM.DetailWidth = SMM.FinalWidth * 0.55 
+    
+    SMM.ListHeight = SMM.FinalHeight - SMM.TopPadding - SMM.BottomPadding - 20
+    SMM.DetailHeight = SMM.FinalHeight - 50 
+end
+
 function SMM:CreateMainFrame()
     -- Basic Frame Properties
-    self:SetSize(600, 450)
+    self:SetSize(SMM.FinalWidth, SMM.FinalHeight)
     self:SetPoint("CENTER")
     self:SetFrameStrata("HIGH")
     self:EnableMouse(true)
@@ -73,7 +102,8 @@ function SMM:CreateListView()
     self.SearchLabel:SetText("Search:")
 
     self.SearchHitBox = CreateFrame("Frame", nil, self, "BackdropTemplate")
-    self.SearchHitBox:SetSize(150, 20)
+    local searchWidth = SMM.ListWidth - 50
+    self.SearchHitBox:SetSize(searchWidth, 20)
     self.SearchHitBox:SetPoint("LEFT", self.SearchLabel, "RIGHT", 5, 0)
     self.SearchHitBox:SetBackdrop({
         bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
@@ -84,7 +114,7 @@ function SMM:CreateListView()
     self.SearchHitBox:SetBackdropColor(0, 0, 0, 0.5)
 
     self.SearchBox = CreateFrame("EditBox", nil, self.SearchHitBox)
-    self.SearchBox:SetSize(140, 20)
+    self.SearchBox:SetSize(searchWidth - 10, 20)
     self.SearchBox:SetPoint("CENTER")
     self.SearchBox:SetFontObject("ChatFontNormal")
     self.SearchBox:SetAutoFocus(false)
@@ -98,11 +128,11 @@ function SMM:CreateListView()
 
     -- ScrollFrame (List View)
     self.ListScroll = CreateFrame("ScrollFrame", nil, self, "UIPanelScrollFrameTemplate")
-    self.ListScroll:SetSize(200, 320) -- Reduced height to fit search
-    self.ListScroll:SetPoint("TOPLEFT", 20, -65) -- Moved down
+    self.ListScroll:SetSize(SMM.ListWidth, SMM.ListHeight) 
+    self.ListScroll:SetPoint("TOPLEFT", 20, -75) -- Push down a bit to clear Search
 
     self.ListContent = CreateFrame("Frame", nil, self.ListScroll)
-    self.ListContent:SetSize(200, 320)
+    self.ListContent:SetSize(SMM.ListWidth, SMM.ListHeight)
     self.ListScroll:SetScrollChild(self.ListContent)
     
     self.ListScroll:SetScript("OnMouseWheel", function(self, delta)
@@ -116,16 +146,50 @@ end
 function SMM:CreateDetailView()
     -- Detail View Container
     self.DetailFrame = CreateFrame("Frame", nil, self)
-    self.DetailFrame:SetSize(330, 350)
-    self.DetailFrame:SetPoint("TOPRIGHT", -20, -40)
+    -- Start at -40. Height needs to ensure Bottom is at SMM.BottomPadding from MainFrame Bottom
+    -- MainFrame Height = H. Top = 0.
+    -- DetailFrame Top = -40.
+    -- Desired Bottom = H - 20 (Padding).
+    -- Height = (H - 20) - 40 = H - 60.
+    local safeHeight = SMM.FinalHeight - 60
+    self.DetailFrame:SetSize(SMM.DetailWidth, safeHeight)
+    self.DetailFrame:SetPoint("TOPRIGHT", -25, -40) -- Extra right padding
+
+    -- Type Selection (Radio Buttons)
+    self.TypeLabel = self.DetailFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    self.TypeLabel:SetPoint("TOPLEFT", 0, 0)
+    self.TypeLabel:SetText("Type:")
+
+    self.TypeGlobal = CreateFrame("CheckButton", nil, self.DetailFrame, "UIRadioButtonTemplate")
+    self.TypeGlobal:SetPoint("LEFT", self.TypeLabel, "RIGHT", 10, 0)
+    self.TypeGlobal.text = self.TypeGlobal:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    self.TypeGlobal.text:SetPoint("LEFT", self.TypeGlobal, "RIGHT", 5, 0)
+    self.TypeGlobal.text:SetText("General")
+    self.TypeGlobal:SetChecked(true)
+
+    self.TypeChar = CreateFrame("CheckButton", nil, self.DetailFrame, "UIRadioButtonTemplate")
+    self.TypeChar:SetPoint("LEFT", self.TypeGlobal.text, "RIGHT", 15, 0)
+    self.TypeChar.text = self.TypeChar:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    self.TypeChar.text:SetPoint("LEFT", self.TypeChar, "RIGHT", 5, 0)
+    self.TypeChar.text:SetText("Character")
+    
+    -- Radio Logic
+    self.TypeGlobal:SetScript("OnClick", function()
+        self.TypeGlobal:SetChecked(true)
+        self.TypeChar:SetChecked(false)
+    end)
+    self.TypeChar:SetScript("OnClick", function()
+        self.TypeChar:SetChecked(true)
+        self.TypeGlobal:SetChecked(false)
+    end)
 
     -- -- Macro Name EditBox
     self.NameLabel = self.DetailFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    self.NameLabel:SetPoint("TOPLEFT", 0, 0)
-    self.NameLabel:SetText("Macro Name:")
+    self.NameLabel:SetPoint("TOPLEFT", self.TypeLabel, "BOTTOMLEFT", 0, -20)
+    self.NameLabel:SetText("Name:")
 
     self.NameEditHitBox = CreateFrame("Frame", nil, self.DetailFrame, "BackdropTemplate")
-    self.NameEditHitBox:SetSize(330, 25)
+    self.NameEditHitBox:SetSize(SMM.DetailWidth, 25)
     self.NameEditHitBox:SetPoint("TOPLEFT", self.NameLabel, "BOTTOMLEFT", 0, -5)
     self.NameEditHitBox:SetBackdrop({
         bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
@@ -136,7 +200,7 @@ function SMM:CreateDetailView()
     self.NameEditHitBox:SetBackdropColor(0, 0, 0, 0.5)
 
     self.NameEdit = CreateFrame("EditBox", nil, self.NameEditHitBox)
-    self.NameEdit:SetSize(320, 25)
+    self.NameEdit:SetSize(SMM.DetailWidth - 10, 25)
     self.NameEdit:SetPoint("CENTER")
     self.NameEdit:SetFontObject("ChatFontNormal")
     self.NameEdit:SetAutoFocus(false)
@@ -145,16 +209,17 @@ function SMM:CreateDetailView()
     -- -- Macro Body ScrollFrame + EditBox
     self.BodyLabel = self.DetailFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     self.BodyLabel:SetPoint("TOPLEFT", self.NameEditHitBox, "BOTTOMLEFT", 0, -10)
-    self.BodyLabel:SetText("Macro Body:")
+    self.BodyLabel:SetText("Body:")
 
-    self.BodyScroll = CreateFrame("ScrollFrame", nil, self.DetailFrame, "UIPanelScrollFrameTemplate")
-    self.BodyScroll:SetSize(300, 200) -- Slightly narrower to make room for scrollbar
-    self.BodyScroll:SetPoint("TOPLEFT", self.BodyLabel, "BOTTOMLEFT", 0, -5)
-
-    -- Background for Body HitBox
+    -- Background for Body HitBox (Created first to establish alignment)
     self.BodyBackdrop = CreateFrame("Frame", nil, self.DetailFrame, "BackdropTemplate")
-    self.BodyBackdrop:SetPoint("TOPLEFT", self.BodyScroll, -5, 5)
-    self.BodyBackdrop:SetPoint("BOTTOMRIGHT", self.BodyScroll, 25, -5) -- Extend to cover scrollbar area roughly
+    -- Dynamic Height: Detail Frame Height - Top Elements (~100) - Bottom Buttons (30) - Padding
+    -- Top Elements: ~90px (Radio + Name)
+    -- Buttons: 25px
+    -- Padding: ~20px
+    local bodyHeight = safeHeight - 140 
+    self.BodyBackdrop:SetSize(SMM.DetailWidth, bodyHeight) 
+    self.BodyBackdrop:SetPoint("TOPLEFT", self.BodyLabel, "BOTTOMLEFT", 0, -5)
     self.BodyBackdrop:SetBackdrop({
         bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -162,12 +227,22 @@ function SMM:CreateDetailView()
         insets = { left = 3, right = 3, top = 3, bottom = 3 }
     })
     self.BodyBackdrop:SetBackdropColor(0, 0, 0, 0.5)
-    self.BodyBackdrop:SetFrameLevel(self.DetailFrame:GetFrameLevel())
+    
+    -- Click-to-focus behavior for the background
+    self.BodyBackdrop:EnableMouse(true)
+    self.BodyBackdrop:SetScript("OnMouseDown", function()
+        self.BodyEdit:SetFocus()
+    end)
+
+    -- ScrollFrame anchored inside the backdrop
+    self.BodyScroll = CreateFrame("ScrollFrame", nil, self.DetailFrame, "UIPanelScrollFrameTemplate")
+    self.BodyScroll:SetPoint("TOPLEFT", self.BodyBackdrop, "TOPLEFT", 5, -5)
+    self.BodyScroll:SetPoint("BOTTOMRIGHT", self.BodyBackdrop, "BOTTOMRIGHT", -25, 5)
     self.BodyScroll:SetFrameLevel(self.BodyBackdrop:GetFrameLevel() + 1)
 
 
     self.BodyEdit = CreateFrame("EditBox", nil, self.BodyScroll)
-    self.BodyEdit:SetSize(295, 200)
+    self.BodyEdit:SetSize(SMM.DetailWidth - 35, bodyHeight) -- Match new height
     self.BodyEdit:SetMultiLine(true)
     self.BodyEdit:SetFontObject("ChatFontNormal")
     self.BodyEdit:SetAutoFocus(false)
@@ -180,35 +255,34 @@ function SMM:CreateDetailView()
     SMM.BodyEdit = self.BodyEdit
     SMM.NameEditHitBox = self.NameEditHitBox
     SMM.BodyBackdrop = self.BodyBackdrop
+    SMM.TypeGlobal = self.TypeGlobal
+    SMM.TypeChar = self.TypeChar
 end
 
 function SMM:CreateButtons()
     -- Buttons
-    self.SaveButton = CreateFrame("Button", nil, self.DetailFrame, "GameMenuButtonTemplate")
-    self.SaveButton:SetSize(80, 25)
-    self.SaveButton:SetPoint("BOTTOMRIGHT", 0, 0)
-    self.SaveButton:SetText("Save")
-
+    -- Delete Button (Far Right)
     self.DeleteButton = CreateFrame("Button", nil, self.DetailFrame, "GameMenuButtonTemplate")
     self.DeleteButton:SetSize(80, 25)
-    self.DeleteButton:SetPoint("RIGHT", self.SaveButton, "LEFT", -10, 0)
+    self.DeleteButton:SetPoint("BOTTOMRIGHT", 0, 0)
     self.DeleteButton:SetText("Delete")
 
-    self.NewSharedButton = CreateFrame("Button", nil, self.DetailFrame, "GameMenuButtonTemplate")
-    self.NewSharedButton:SetSize(100, 25)
-    self.NewSharedButton:SetPoint("BOTTOMLEFT", 0, 0)
-    self.NewSharedButton:SetText("New Global")
+    -- Save Button (Left of Delete)
+    self.SaveButton = CreateFrame("Button", nil, self.DetailFrame, "GameMenuButtonTemplate")
+    self.SaveButton:SetSize(80, 25)
+    self.SaveButton:SetPoint("RIGHT", self.DeleteButton, "LEFT", -10, 0)
+    self.SaveButton:SetText("Save")
 
-    self.NewCharButton = CreateFrame("Button", nil, self.DetailFrame, "GameMenuButtonTemplate")
-    self.NewCharButton:SetSize(100, 25)
-    self.NewCharButton:SetPoint("LEFT", self.NewSharedButton, "RIGHT", 10, 0)
-    self.NewCharButton:SetText("New Char")
+    -- New Button (Far Left)
+    self.NewButton = CreateFrame("Button", nil, self.DetailFrame, "GameMenuButtonTemplate")
+    self.NewButton:SetSize(100, 25)
+    self.NewButton:SetPoint("BOTTOMLEFT", 0, 0)
+    self.NewButton:SetText("New")
     
     -- Map globals for logic
     SMM.SaveButton = self.SaveButton
     SMM.DeleteButton = self.DeleteButton
-    SMM.NewSharedButton = self.NewSharedButton
-    SMM.NewCharButton = self.NewCharButton
+    SMM.NewButton = self.NewButton
 end
 
 function SMM:RegisterEvents()
@@ -222,23 +296,32 @@ end
 
 function SMM:SetupButtonActions()
     self.SaveButton:SetScript("OnClick", function()
+        local name = self.NameEdit:GetText()
+        if name == "" then return end 
+
+        local body = self.BodyEdit:GetText()
+        
         if self.SelectedMacroIndex then
-            local name = self.NameEdit:GetText()
-            local body = self.BodyEdit:GetText()
-            local _, icon = GetMacroInfo(self.SelectedMacroIndex)
-            
-            EditMacro(self.SelectedMacroIndex, name, icon, body)
+            -- Update existing
+            local _, currentIcon = GetMacroInfo(self.SelectedMacroIndex)
+            EditMacro(self.SelectedMacroIndex, name, currentIcon, body)
+        else
+            -- Create new
+            local icon = 134400 -- Default QuestionMark
+            local isLocal = self.TypeChar:GetChecked()
+            CreateMacro(name, icon, body, isLocal)
+            -- After creation, CreateMacro triggers UPDATE_MACROS which refreshes list
+            -- User might want to stay in edit mode for this new macro?
+            -- RefreshList resets selection to nil usually... 
+            -- We might want to handle preserving selection later, but for now this fits requirements.
+            self.NameEdit:SetText("")
+            self.BodyEdit:SetText("")
         end
     end)
 
-    self.NewSharedButton:SetScript("OnClick", function()
-        -- Defaults: Name "New Macro", Icon "INV_Misc_QuestionMark", Body ""
-        -- 134400 is the file ID for the question mark
-        CreateMacro("New Macro", 134400, "", false) -- false = global
-    end)
-
-    self.NewCharButton:SetScript("OnClick", function()
-        CreateMacro("New Macro", 134400, "", true) -- true = per character
+    self.NewButton:SetScript("OnClick", function()
+        self.SelectedMacroIndex = nil
+        self:SetDetailViewEnabled(false) -- Reset view
     end)
 
     self.DeleteButton:SetScript("OnClick", function()
@@ -251,22 +334,26 @@ function SMM:SetupButtonActions()
 end
 
 function SMM:SetDetailViewEnabled(enabled)
+    self.NameEdit:Enable()
+    self.BodyEdit:Enable()
+    self.SaveButton:Enable()
+    self.NameEditHitBox:SetAlpha(1)
+    self.BodyBackdrop:SetAlpha(1)
+    
     if enabled then
-        self.NameEdit:Enable()
-        self.BodyEdit:Enable()
-        self.SaveButton:Enable()
+        -- Edit Mode
         self.DeleteButton:Enable()
-        self.NameEditHitBox:SetAlpha(1)
-        self.BodyBackdrop:SetAlpha(1)
+        self.TypeGlobal:Disable() -- Usually you can't change macro type after creation easily without recreation
+        self.TypeChar:Disable()
     else
+        -- Create/Reset Mode
         self.NameEdit:SetText("")
         self.BodyEdit:SetText("")
-        self.NameEdit:Disable()
-        self.BodyEdit:Disable()
-        self.SaveButton:Disable()
         self.DeleteButton:Disable()
-        self.NameEditHitBox:SetAlpha(0.5)
-        self.BodyBackdrop:SetAlpha(0.5)
+        self.TypeGlobal:Enable()
+        self.TypeChar:Enable()
+        self.TypeGlobal:SetChecked(true)
+        self.TypeChar:SetChecked(false)
     end
 end
 
@@ -331,6 +418,7 @@ function SMM:RefreshList()
 
         local btn = self:GetListButton()
         btn:SetPoint("TOPLEFT", 5, yOffset)
+        btn:SetSize(SMM.ListWidth - 25, BUTTON_HEIGHT) -- Adjust button width
         btn.Text:SetText((isLocal and "|cff00ccff[C]|r " or "|cffffd700[G]|r ") .. name)
         
         -- Click Handler
@@ -341,6 +429,10 @@ function SMM:RefreshList()
             -- Populate Details
             self.NameEdit:SetText(name)
             self.BodyEdit:SetText(body)
+            
+            self.TypeGlobal:SetChecked(not isLocal)
+            self.TypeChar:SetChecked(isLocal)
+            
             self:SetDetailViewEnabled(true)
         end)
 
