@@ -493,6 +493,12 @@ function SMM:RefreshList()
             self:SetDetailViewEnabled(true)
         end)
 
+        -- Drag Handler
+        btn:RegisterForDrag("LeftButton")
+        btn:SetScript("OnDragStart", function()
+            PickupMacro(apiIndex)
+        end)
+
         table.insert(self.MacroList, btn)
         yOffset = yOffset - BUTTON_HEIGHT - 3
     end
