@@ -476,6 +476,7 @@ function SMM:RefreshList()
         btn.Icon:SetTexture(icon)
         -- Removed [G]/[C] prefix as headers provide context
         btn.Text:SetText(name)
+        btn.Text:SetTextColor(1, 1, 1)
         
         -- Click Handler
         btn:SetScript("OnClick", function()
@@ -493,7 +494,7 @@ function SMM:RefreshList()
         end)
 
         table.insert(self.MacroList, btn)
-        yOffset = yOffset - BUTTON_HEIGHT
+        yOffset = yOffset - BUTTON_HEIGHT - 3
     end
 
     -- Header Helper
