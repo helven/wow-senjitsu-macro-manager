@@ -22,6 +22,9 @@ SMM.FramePool = {} -- Pool for list buttons
 SMM.HeaderPool = {} -- Pool for header buttons
 SMM.ActiveHeaders = {} -- Currently active headers
 SMM.Groups = { Global = true, Char = true } -- Expansion state
+SMM.IconBrowserTargetIconX = 12
+SMM.IconBrowserTargetIconY = 10
+SMM.WorkIcon = 134400 -- Default QuestionMark
 
 function SMM:RunAddonLifeCycle()
     SMM:InitializeLayout()
@@ -209,18 +212,36 @@ function SMM:CreateDetailView()
     self.NameEdit:SetAutoFocus(false)
     self.NameEdit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 
+    -- -- Icon Selection
+    self.IconLabel = self.DetailFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    self.IconLabel:SetPoint("TOPLEFT", self.NameEditHitBox, "BOTTOMLEFT", 0, -10)
+    self.IconLabel:SetText("Icon:")
+
+    self.IconPreview = self.DetailFrame:CreateTexture(nil, "ARTWORK")
+    self.IconPreview:SetSize(36, 36)
+    self.IconPreview:SetPoint("TOPLEFT", self.IconLabel, "BOTTOMLEFT", 0, -5)
+    self.IconPreview:SetTexture(SMM.WorkIcon)
+
+    self.SelectIconButton = CreateFrame("Button", nil, self.DetailFrame, "UIPanelButtonTemplate")
+    self.SelectIconButton:SetSize(100, 22)
+    self.SelectIconButton:SetPoint("LEFT", self.IconPreview, "RIGHT", 10, 0)
+    self.SelectIconButton:SetText("Select Icon")
+    self.SelectIconButton:SetScript("OnClick", function()
+        SMM:ShowIconBrowser()
+    end)
+
     -- -- Macro Body ScrollFrame + EditBox
     self.BodyLabel = self.DetailFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    self.BodyLabel:SetPoint("TOPLEFT", self.NameEditHitBox, "BOTTOMLEFT", 0, -10)
+    self.BodyLabel:SetPoint("TOPLEFT", self.IconPreview, "BOTTOMLEFT", 0, -10)
     self.BodyLabel:SetText("Body:")
 
     -- Background for Body HitBox (Created first to establish alignment)
     self.BodyBackdrop = CreateFrame("Frame", nil, self.DetailFrame, "BackdropTemplate")
     -- Dynamic Height: Detail Frame Height - Top Elements (~100) - Bottom Buttons (30) - Padding
-    -- Top Elements: ~90px (Radio + Name)
+    -- Top Elements: ~90px (Radio + Name) + 60px (Icon) ~ 150px
     -- Buttons: 25px
     -- Padding: ~20px
-    local bodyHeight = safeHeight - 140 
+    local bodyHeight = safeHeight - 200 
     self.BodyBackdrop:SetSize(SMM.DetailWidth, bodyHeight) 
     self.BodyBackdrop:SetPoint("TOPLEFT", self.BodyLabel, "BOTTOMLEFT", 0, -5)
     self.BodyBackdrop:SetBackdrop({
@@ -260,6 +281,7 @@ function SMM:CreateDetailView()
     SMM.BodyBackdrop = self.BodyBackdrop
     SMM.TypeGlobal = self.TypeGlobal
     SMM.TypeChar = self.TypeChar
+    SMM.IconPreview = self.IconPreview
 end
 
 function SMM:CreateButtons()
@@ -303,14 +325,13 @@ function SMM:SetupButtonActions()
         if name == "" then return end 
 
         local body = self.BodyEdit:GetText()
+        local icon = SMM.WorkIcon or 134400
         
         if self.SelectedMacroIndex then
             -- Update existing
-            local _, currentIcon = GetMacroInfo(self.SelectedMacroIndex)
-            EditMacro(self.SelectedMacroIndex, name, currentIcon, body)
+            EditMacro(self.SelectedMacroIndex, name, icon, body)
         else
             -- Create new
-            local icon = 134400 -- Default QuestionMark
             local isLocal = self.TypeChar:GetChecked()
             CreateMacro(name, icon, body, isLocal)
             -- After creation, CreateMacro triggers UPDATE_MACROS which refreshes list
@@ -319,11 +340,15 @@ function SMM:SetupButtonActions()
             -- We might want to handle preserving selection later, but for now this fits requirements.
             self.NameEdit:SetText("")
             self.BodyEdit:SetText("")
+            self.IconPreview:SetTexture(134400)
+            SMM.WorkIcon = 134400
         end
     end)
 
     self.NewButton:SetScript("OnClick", function()
         self.SelectedMacroIndex = nil
+        SMM.WorkIcon = 134400
+        self.IconPreview:SetTexture(134400)
         self:SetDetailViewEnabled(false) -- Reset view
     end)
 
@@ -357,6 +382,10 @@ function SMM:SetDetailViewEnabled(enabled)
         self.TypeChar:Enable()
         self.TypeGlobal:SetChecked(true)
         self.TypeChar:SetChecked(false)
+        
+        SMM.WorkIcon = 134400
+        self.IconPreview:SetTexture(134400)
+        self.SelectIconButton:Enable()
     end
 end
 
@@ -486,6 +515,8 @@ function SMM:RefreshList()
             -- Populate Details
             self.NameEdit:SetText(name)
             self.BodyEdit:SetText(body)
+            SMM.WorkIcon = icon
+            self.IconPreview:SetTexture(icon)
             
             self.TypeGlobal:SetChecked(not isLocal)
             self.TypeChar:SetChecked(isLocal)
@@ -556,6 +587,214 @@ function SMM:SetupSlashCommand()
             SMM:RefreshList()
         end
     end
+end
+
+-- ----------------------------------------------------------------------------------------------------------------------------------------------------------
+-- ICON BROWSER (Mimicking Default UI)
+-- ----------------------------------------------------------------------------------------------------------------------------------------------------------
+function SMM:CreateIconBrowser()
+    if SMM.IconBrowser then return end
+
+    local frame = CreateFrame("Frame", "SMMIconBrowser", SMM, "BackdropTemplate")
+    
+    -- Grid Constants
+    local COLS = SMM.IconBrowserTargetIconX or 12
+    local ROWS = SMM.IconBrowserTargetIconY or 10
+    local ICON_SIZE = 36
+    local GAP = 4
+    local PADDING = 10
+    local TOP_HEIGHT = 80 -- Increased spacing for Dropdown
+    local BOTTOM_HEIGHT = 10 
+
+    -- Auto-Calculate Width/Height based on Target Grid
+    local contentWidth = (COLS * ICON_SIZE) + ((COLS - 1) * GAP)
+    local contentHeight = (ROWS * ICON_SIZE) + ((ROWS - 1) * GAP)
+    
+    local width = PADDING + contentWidth + PADDING + 35 
+    local height = TOP_HEIGHT + contentHeight + BOTTOM_HEIGHT + PADDING
+    
+    frame:SetSize(width, height)
+    frame:SetPoint("CENTER", 0, 0)
+    frame:SetFrameStrata("DIALOG")
+    frame:EnableMouse(true)
+    frame:SetMovable(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", frame.StartMoving)
+    frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
+
+    frame:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true, tileSize = 32, edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 }
+    })
+
+    -- Title
+    frame.Title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    frame.Title:SetPoint("TOP", 0, -10)
+    frame.Title:SetText("Select Icon")
+
+    -- Close Button
+    frame.CloseButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
+    frame.CloseButton:SetPoint("TOPRIGHT", -5, -5)
+    
+    -- Dropdown for Categories
+    frame.CategoryDropdown = CreateFrame("Frame", "SMMIconCategoryDropdown", frame, "UIDropDownMenuTemplate")
+    frame.CategoryDropdown:SetPoint("TOPRIGHT", -10, -40) -- Moved down slightly
+    UIDropDownMenu_SetWidth(frame.CategoryDropdown, 120)
+    UIDropDownMenu_SetText(frame.CategoryDropdown, "All Icons")
+    
+    -- Set Dropdown Button Font to GameFontHighlight (White, Normal Size)
+    local dropdownText = _G[frame.CategoryDropdown:GetName().."Text"]
+    if dropdownText then
+        dropdownText:SetFontObject("GameFontHighlight")
+    end
+    
+    -- Force list alignment to Bottom Left of the trigger, with 20px offset to match visual border
+    UIDropDownMenu_SetAnchor(frame.CategoryDropdown, 20, 10, "TOPLEFT", frame.CategoryDropdown, "BOTTOMLEFT")
+    
+    SMM.CurrentCategory = "ALL" -- Default
+
+    local function OnSelect(self)
+        SMM.CurrentCategory = self.value
+        UIDropDownMenu_SetText(frame.CategoryDropdown, self:GetText())
+        SMM:UpdateIconList(self.value)
+        CloseDropDownMenus()
+    end
+
+    UIDropDownMenu_Initialize(frame.CategoryDropdown, function(self, level, menuList)
+        local info = UIDropDownMenu_CreateInfo()
+        info.fontObject = GameFontHighlight
+        
+        info.text = "All Icons"
+        info.value = "ALL"
+        info.func = OnSelect
+        info.checked = (SMM.CurrentCategory == "ALL")
+        UIDropDownMenu_AddButton(info)
+
+        info.text = "Spells"
+        info.value = "SPELLS"
+        info.func = OnSelect
+        info.checked = (SMM.CurrentCategory == "SPELLS")
+        UIDropDownMenu_AddButton(info)
+
+        info.text = "Items"
+        info.value = "ITEMS"
+        info.func = OnSelect
+        info.checked = (SMM.CurrentCategory == "ITEMS")
+        UIDropDownMenu_AddButton(info)
+    end)
+
+    -- Scroll Logic
+    frame.GridContainer = CreateFrame("Frame", nil, frame)
+    frame.GridContainer:SetPoint("TOPLEFT", PADDING + 5, -TOP_HEIGHT)
+    frame.GridContainer:SetSize(contentWidth, contentHeight)
+    
+    frame.ScrollFrame = CreateFrame("ScrollFrame", "SMMIconScroll", frame, "FauxScrollFrameTemplate")
+    frame.ScrollFrame:SetPoint("TOPLEFT", frame.GridContainer, "TOPLEFT", 0, 0)
+    frame.ScrollFrame:SetPoint("BOTTOMRIGHT", frame.GridContainer, "BOTTOMRIGHT", -5, 0) 
+    
+    frame.ScrollFrame:SetScript("OnVerticalScroll", function(self, offset)
+        FauxScrollFrame_OnVerticalScroll(self, offset, 40, function() SMM:UpdateIconGrid() end)
+    end)
+
+    -- Force Scrollbar Position
+    local scrollBar = _G["SMMIconScrollScrollBar"]
+    if scrollBar then
+        scrollBar:ClearAllPoints()
+        scrollBar:SetPoint("TOPLEFT", frame.ScrollFrame, "TOPRIGHT", 10, -16)
+        scrollBar:SetPoint("BOTTOMLEFT", frame.ScrollFrame, "BOTTOMRIGHT", 10, 16)
+    end
+    
+    -- Initialize State
+    SMM.CurrentIconList = {}
+    SMM.IconButtons = {}
+    
+    -- Create Button Pool
+    local numButtons = COLS * ROWS
+    for i = 1, numButtons do
+        local btn = CreateFrame("Button", nil, frame.GridContainer)
+        btn:SetSize(ICON_SIZE, ICON_SIZE)
+        
+        btn.Icon = btn:CreateTexture(nil, "ARTWORK")
+        btn.Icon:SetAllPoints(btn)
+        
+        btn.Highlight = btn:CreateTexture(nil, "HIGHLIGHT")
+        btn.Highlight:SetAllPoints(btn)
+        btn.Highlight:SetColorTexture(1, 1, 1, 0.4)
+        
+        btn:SetScript("OnClick", function()
+             SMM.WorkIcon = btn.IconID
+             if SMM.IconPreview then SMM.IconPreview:SetTexture(btn.IconID) end
+             frame:Hide()
+        end)
+        
+        -- Layout
+        local col = (i - 1) % COLS
+        local row = math.floor((i - 1) / COLS)
+        
+        btn:SetPoint("TOPLEFT", col * (ICON_SIZE + GAP), -(row * (ICON_SIZE + GAP)))
+        
+        table.insert(SMM.IconButtons, btn)
+    end
+    
+    SMM.IconBrowser = frame
+end
+
+function SMM:ShowIconBrowser()
+    if not SMM.IconBrowser then
+        SMM:CreateIconBrowser()
+    end
+    
+    -- Default to All
+    SMM:UpdateIconList("ALL")
+    SMM.IconBrowser:Show()
+end
+
+function SMM:UpdateIconList(category)
+    SMM.CurrentIconList = {}
+    
+    local spellIcons = GetMacroIcons() or {}
+    local itemIcons = GetMacroItemIcons() or {}
+    
+    if category == "ALL" then
+         for _, v in pairs(spellIcons) do table.insert(SMM.CurrentIconList, v) end
+         for _, v in pairs(itemIcons) do table.insert(SMM.CurrentIconList, v) end
+    elseif category == "SPELLS" then
+         for _, v in pairs(spellIcons) do table.insert(SMM.CurrentIconList, v) end
+    elseif category == "ITEMS" then
+         for _, v in pairs(itemIcons) do table.insert(SMM.CurrentIconList, v) end
+    end
+    
+    SMM:UpdateIconGrid()
+end
+
+function SMM:UpdateIconGrid()
+    if not SMM.CurrentIconList then return end
+    
+    local numIcons = #SMM.CurrentIconList
+    local scrollFrame = SMMIconScroll
+    if not scrollFrame then return end
+    
+    local offset = FauxScrollFrame_GetOffset(scrollFrame)
+    local COLS = SMM.IconBrowserTargetIconX or 12
+    local ROWS = SMM.IconBrowserTargetIconY or 10
+    local ROW_HEIGHT = 40 
+    
+    for i, btn in ipairs(SMM.IconButtons) do
+        local index = (offset * COLS) + i
+        if index <= numIcons then
+            local icon = SMM.CurrentIconList[index]
+            btn.IconID = icon
+            btn.Icon:SetTexture(icon)
+            btn:Show()
+        else
+            btn:Hide()
+        end
+    end
+    
+    local totalRows = math.ceil(numIcons / COLS)
+    FauxScrollFrame_Update(scrollFrame, totalRows, ROWS, ROW_HEIGHT, nil, nil, nil, nil, nil, nil, true)
 end
 
 SMM:RunAddonLifeCycle()
