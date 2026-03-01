@@ -198,6 +198,10 @@ function SMM:CreateDetailView()
     self.NameLabel:SetPoint("TOPLEFT", self.TypeLabel, "BOTTOMLEFT", 0, -20)
     self.NameLabel:SetText("Name:")
 
+    self.NameCountLabel = self.DetailFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    self.NameCountLabel:SetPoint("LEFT", self.NameLabel, "RIGHT", 5, 0)
+    self.NameCountLabel:SetText("(0/16) characters used")
+
     self.NameEditHitBox = CreateFrame("Frame", nil, self.DetailFrame, "BackdropTemplate")
     self.NameEditHitBox:SetSize(SMM.DetailWidth, 25)
     self.NameEditHitBox:SetPoint("TOPLEFT", self.NameLabel, "BOTTOMLEFT", 0, -5)
@@ -214,7 +218,18 @@ function SMM:CreateDetailView()
     self.NameEdit:SetPoint("CENTER")
     self.NameEdit:SetFontObject("ChatFontNormal")
     self.NameEdit:SetAutoFocus(false)
+    self.NameEdit:SetMaxLetters(16)
     self.NameEdit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    self.NameEdit:SetScript("OnTextChanged", function(self)
+        SMM.NameCountLabel:SetText(format("(%d/16) characters used", #self:GetText()))
+    end)
+    
+    -- Hook SetText to update label manually
+    self.NameEdit.OriginalSetText = self.NameEdit.SetText
+    function self.NameEdit:SetText(text)
+        self.OriginalSetText(self, text)
+        SMM.NameCountLabel:SetText(format("(%d/16) characters used", #(text or "")))
+    end
 
     -- -- Icon Selection
     self.IconLabel = self.DetailFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -227,17 +242,33 @@ function SMM:CreateDetailView()
     self.IconPreview:SetTexture(SMM.WorkIcon)
 
     self.SelectIconButton = CreateFrame("Button", nil, self.DetailFrame, "UIPanelButtonTemplate")
-    self.SelectIconButton:SetSize(100, 22)
+    self.SelectIconButton:SetSize(100, 25)
     self.SelectIconButton:SetPoint("LEFT", self.IconPreview, "RIGHT", 10, 0)
     self.SelectIconButton:SetText("Select Icon")
     self.SelectIconButton:SetScript("OnClick", function()
         SMM:ShowIconBrowser()
     end)
 
+    self.ResetIconButton = CreateFrame("Button", nil, self.DetailFrame, "UIPanelButtonTemplate")
+    self.ResetIconButton:SetSize(100, 25)
+    self.ResetIconButton:SetPoint("LEFT", self.SelectIconButton, "RIGHT", 5, 0)
+    self.ResetIconButton:SetText("Reset Icon")
+    self.ResetIconButton:SetScript("OnClick", function()
+        SMM.WorkIcon = 134400
+        if SMM.IconPreview then
+             SMM.IconPreview:SetTexture(SMM.WorkIcon)
+        end
+        SMM:UpdateResetIconState()
+    end)
+
     -- -- Macro Body ScrollFrame + EditBox
     self.BodyLabel = self.DetailFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     self.BodyLabel:SetPoint("TOPLEFT", self.IconPreview, "BOTTOMLEFT", 0, -10)
     self.BodyLabel:SetText("Body:")
+
+    self.BodyCountLabel = self.DetailFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    self.BodyCountLabel:SetPoint("LEFT", self.BodyLabel, "RIGHT", 5, 0)
+    self.BodyCountLabel:SetText("(0/255) characters used")
 
     -- Background for Body HitBox (Created first to establish alignment)
     self.BodyBackdrop = CreateFrame("Frame", nil, self.DetailFrame, "BackdropTemplate")
@@ -274,7 +305,18 @@ function SMM:CreateDetailView()
     self.BodyEdit:SetMultiLine(true)
     self.BodyEdit:SetFontObject("ChatFontNormal")
     self.BodyEdit:SetAutoFocus(false)
+    self.BodyEdit:SetMaxLetters(255)
     self.BodyEdit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    self.BodyEdit:SetScript("OnTextChanged", function(self)
+        SMM.BodyCountLabel:SetText(format("(%d/255) characters used", #self:GetText()))
+    end)
+
+    -- Hook SetText
+    self.BodyEdit.OriginalSetText = self.BodyEdit.SetText
+    function self.BodyEdit:SetText(text)
+        self.OriginalSetText(self, text)
+        SMM.BodyCountLabel:SetText(format("(%d/255) characters used", #(text or "")))
+    end
     
     self.BodyScroll:SetScrollChild(self.BodyEdit)
     
@@ -286,32 +328,64 @@ function SMM:CreateDetailView()
     SMM.TypeGlobal = self.TypeGlobal
     SMM.TypeChar = self.TypeChar
     SMM.IconPreview = self.IconPreview
+    SMM.NameCountLabel = self.NameCountLabel
+    SMM.BodyCountLabel = self.BodyCountLabel
+    SMM.ResetIconButton = self.ResetIconButton
 end
 
 function SMM:CreateButtons()
+    -- Helper to standardise button text states
+    local function ConfigureButton(btn, r, g, b)
+        -- Hook state changes to enforce colors
+        btn:HookScript("OnEnable", function(self)
+            self:GetFontString():SetTextColor(r, g, b)
+        end)
+        btn:HookScript("OnDisable", function(self)
+            self:GetFontString():SetTextColor(0.5, 0.5, 0.5)
+        end)
+        
+        -- Apply initial
+        if btn:IsEnabled() then
+            btn:GetFontString():SetTextColor(r, g, b)
+        else
+            btn:GetFontString():SetTextColor(0.5, 0.5, 0.5)
+        end
+    end
+
     -- Buttons
     -- Delete Button (Far Right)
     self.DeleteButton = CreateFrame("Button", nil, self.DetailFrame, "GameMenuButtonTemplate")
     self.DeleteButton:SetSize(80, 25)
     self.DeleteButton:SetPoint("BOTTOMRIGHT", 0, 0)
     self.DeleteButton:SetText("Delete")
+    ConfigureButton(self.DeleteButton, 1, 1, 1)
 
     -- Save Button (Left of Delete)
     self.SaveButton = CreateFrame("Button", nil, self.DetailFrame, "GameMenuButtonTemplate")
     self.SaveButton:SetSize(80, 25)
     self.SaveButton:SetPoint("RIGHT", self.DeleteButton, "LEFT", -10, 0)
     self.SaveButton:SetText("Save")
+    ConfigureButton(self.SaveButton, 1, 1, 0)
+
+    -- Cancel Button (Left of Save)
+    self.CancelButton = CreateFrame("Button", nil, self.DetailFrame, "GameMenuButtonTemplate")
+    self.CancelButton:SetSize(80, 25)
+    self.CancelButton:SetPoint("RIGHT", self.SaveButton, "LEFT", -10, 0)
+    self.CancelButton:SetText("Cancel")
+    ConfigureButton(self.CancelButton, 1, 1, 0)
 
     -- New Button (Far Left)
     self.NewButton = CreateFrame("Button", nil, self.DetailFrame, "GameMenuButtonTemplate")
     self.NewButton:SetSize(100, 25)
     self.NewButton:SetPoint("BOTTOMLEFT", 0, 0)
     self.NewButton:SetText("New")
+    ConfigureButton(self.NewButton, 1, 1, 0)
     
     -- Map globals for logic
     SMM.SaveButton = self.SaveButton
     SMM.DeleteButton = self.DeleteButton
     SMM.NewButton = self.NewButton
+    SMM.CancelButton = self.CancelButton
 end
 
 function SMM:RegisterEvents()
@@ -360,6 +434,63 @@ function SMM:SetupButtonActions()
             self:SetFormMode("create")
         end
     end)
+
+    self.CancelButton:SetScript("OnClick", function()
+        if self.SelectedMacroIndex then
+            -- EDIT MODE: Reset to saved data
+            local name, icon, body = GetMacroInfo(self.SelectedMacroIndex)
+            if name then
+                self.NameEdit:SetText(name)
+                self.BodyEdit:SetText(body)
+                SMM.WorkIcon = icon
+                self.IconPreview:SetTexture(icon)
+                
+                -- Reset Type Selection
+                self.TypeGlobal:SetChecked(not self.SelectedMacroIsLocal)
+                self.TypeChar:SetChecked(self.SelectedMacroIsLocal)
+            end
+        else
+            -- CREATE MODE: Clear form
+            self.NameEdit:SetText("")
+            self.BodyEdit:SetText("")
+            SMM.WorkIcon = 134400
+            self.IconPreview:SetTexture(134400)
+            self.TypeGlobal:SetChecked(true)
+            self.TypeChar:SetChecked(false)
+        end
+        SMM:UpdateCancelState()
+        SMM:UpdateResetIconState()
+    end)
+    
+    -- Hook for text changes to update Cancel button state
+    self.NameEdit:HookScript("OnTextChanged", function() SMM:UpdateCancelState() end)
+    self.BodyEdit:HookScript("OnTextChanged", function() SMM:UpdateCancelState() end)
+end
+
+function SMM:UpdateResetIconState()
+    -- Default/Empty icon is 134400 (Question Mark)
+    local isDefault = (SMM.WorkIcon == 134400) or (SMM.WorkIcon == nil)
+    
+    if isDefault then
+        SMM.ResetIconButton:Disable()
+    else
+        SMM.ResetIconButton:Enable()
+    end
+end
+
+function SMM:UpdateCancelState()
+    if SMM.SelectedMacroIndex then
+        -- Always enabled in Edit Mode (to reset changes)
+        SMM.CancelButton:Enable()
+    else
+        -- Create Mode: Enable only if there is text
+        local hasText = (SMM.NameEdit:GetText() ~= "") or (SMM.BodyEdit:GetText() ~= "")
+        if hasText then
+            SMM.CancelButton:Enable()
+        else
+            SMM.CancelButton:Disable()
+        end
+    end
 end
 
 function SMM:SetFormMode(mode)
@@ -374,6 +505,8 @@ function SMM:SetFormMode(mode)
         self.DeleteButton:Enable()
         self.TypeGlobal:Enable()
         self.TypeChar:Enable()
+        SMM:UpdateCancelState()
+        SMM:UpdateResetIconState()
     elseif mode == "create" then
         -- Create Mode: Clear form for new macro
         self.NameEdit:SetText("")
@@ -381,12 +514,14 @@ function SMM:SetFormMode(mode)
         self.DeleteButton:Disable()
         self.TypeGlobal:Enable()
         self.TypeChar:Enable()
+        SMM:UpdateCancelState()
         self.TypeGlobal:SetChecked(true)
         self.TypeChar:SetChecked(false)
         
         SMM.WorkIcon = 134400
         self.IconPreview:SetTexture(134400)
         self.SelectIconButton:Enable()
+        SMM:UpdateResetIconState()
     end
 end
 
@@ -795,6 +930,7 @@ function SMM:CreateIconBrowser()
         btn:SetScript("OnClick", function()
              SMM.WorkIcon = btn.IconID
              if SMM.IconPreview then SMM.IconPreview:SetTexture(btn.IconID) end
+             SMM:UpdateResetIconState()
              frame:Hide()
         end)
         
